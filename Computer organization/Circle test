@@ -1,0 +1,37 @@
+.word 0x100 100              # set radius to 100
+lw $s0,$imm1,$0,$0,0x100,0   # saving radius value in $s0
+mac $s0,$s0,$s0,$0,0,0       # saving radius squared (R^2) value in $s0
+
+add $s1,$0,$0,$0,0,0                  # initialzing y=0 in $s1
+out $0, $imm1, $0, $imm2, 21, 255     # set monitor_datta = 255 (white colour)
+
+
+LOOP1:  
+
+add $s2,$0,$0,$0,0,0  #initialzing x=0
+
+
+LOOP2:  
+
+      sub $t2, $s2, $imm1, $0, 128, 0  # save (x-128) in $t2
+      mac $t2, $t2, $t2, $0, 0, 0      # save (x-128)^2 in $t2
+      sub $t1, $s1, $imm1, $0, 128, 0  # save (y-128) in $t1
+      mac $t1, $t1, $t1, $0, 0, 0      # save (y-128)^2 in $t1
+
+      add $t0, $t1, $t2, $0 ,0, 0              #save (x-128)^2+(y-128)^2 in $t0
+      bgt $0, $t0, $s0, $imm1, END_LOOP2, 0    # check if (x-128)^2+(y-128)^2 <= or > R^2
+      mac $t1 ,$s1, $imm1, $s2, 256, 0         # save the adress y*256+x in $t1 - we consider the monitor matrix as a one One-dimensional array 
+      out $0, $imm1, $0, $t1, 20, 0   # we write in monitoradress the adress that is stored in $t1
+      out $0, $imm1, $0, $imm2, 22, 1  # we set monitor_cmd=1
+
+
+      END_LOOP2:
+      add $s2,$s2,$imm1,$0,1,0               # x=x+1
+      bne $0, $s2, $imm1, $imm2, 256, LOOP2  # if we didn't finish to run on the current row we jump to LOOP2
+
+
+
+add $s1,$s1,$imm1,$0,1,0  # y=y+1
+bne $0, $s1, $imm1, $imm2, 256, LOOP1        # if we didn't finish to run on the whole monitor matrix we jump to LOOP1
+
+halt $0, $0, $0, $0, 0, 0 # Finish
