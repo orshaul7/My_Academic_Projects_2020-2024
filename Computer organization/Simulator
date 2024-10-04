@@ -1,1 +1,1332 @@
 
+#define _CRT_SECURE_NO_WARNINGS
+#include <ctype.h>
+#include <string.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+//define sizes
+#define MEMORY_SIZE 4096          
+#define MAX_INSTRUCTIONS 4096
+#define SIMP_REGS_SIZE 16
+#define NUM_OF_OPCODES 22
+#define AVAILABLE 3
+#define IRQ_0 0	
+#define IRQ_1 1
+#define IRQ_2 2
+#define DISK_SIZE 128*128 
+#define MONITOR_SIZE 256*256
+
+typedef struct _IO_regs {
+	int irq0enable;
+	int irq1enable;
+	int irq2enable;
+	int irq0status;
+	int irq1status;
+	int irq2status;
+	int irqhandler;
+	int irqreturn;
+	int clks;
+	int leds;
+	int display7seg;
+	int timerenable;
+	int timercurrent;
+	int timermax;
+	int diskcmd;
+	int disksector;
+	int diskbuffer;
+	int diskstatus;
+	int reserved;
+	int monitoraddr;
+	int monitordata;
+	int monitorcmd;
+}IO_regs;
+
+typedef struct _irq2in_list
+{
+	int i_num;
+	struct _irq2in_list* next;
+}irq2in_list;
+
+//initialize sizes
+int done = 0;
+int simp_regs[SIMP_REGS_SIZE] = { 0 };
+int Data_memory_array[MEMORY_SIZE] = { 0 };
+long long ins_array[MEMORY_SIZE] = { 0 };
+int disk_content[DISK_SIZE] = { 0 };
+int interrupt = AVAILABLE;
+irq2in_list* irq2in_head = NULL;
+int64_t cycle = 0;
+int disk_timer = 0;
+int monitor_buffer[MONITOR_SIZE] = { 0 };
+
+
+enum SIMP_regs_assign {
+	$zero, $imm1, $imm2, $v0, $a0, $a1, $a2, $t0, $t1, $t2, $s0, $s1, $s2, \
+	$gp, $sp, $ra
+};
+
+
+//Functions	decleration:
+//Simulator main functions:
+void simulator_run(IO_regs* io_regs, FILE* dmemout, FILE* regout, FILE* trace, FILE* cycles, FILE* diskin, FILE* irq2in, FILE* hwregtrace, FILE* leds, FILE* display7seg, FILE* diskout, FILE* monitor, FILE* monitor_yuv);
+long long choose_instruction(IO_regs* io_regs, int* pc, int irq);
+int interrupt_update(IO_regs* io_regs, int irq, int* pc);
+void decode(long long instruction, int* opcode, int* rd, int* rs, int* rt, int* rm);
+void excecute(IO_regs* io_regs, int* pc, int opcode, int rd, int rs, int rt, int rm, FILE* hwregtrace, FILE* leds, FILE* display7seg);
+
+//Opcodes:
+void add(int* pc, int rd, int rs, int rt, int rm);
+void sub(int* pc, int rd, int rs, int rt, int rm);
+void mac(int* pc, int rd, int rs, int rt, int rm);
+void and (int* pc, int rd, int rs, int rt, int rm);
+void or (int* pc, int rd, int rs, int rt, int rm);
+void xor (int* pc, int rd, int rs, int rt, int rm);
+void sll(int* pc, int rd, int rs, int rt, int rm);
+void sra(int* pc, int rd, int rs, int rt, int rm);
+void srl(int* pc, int rd, int rs, int rt, int rm);
+void beq(int* pc, int rd, int rs, int rt, int rm);
+void bne(int* pc, int rd, int rs, int rt, int rm);
+void blt(int* pc, int rd, int rs, int rt, int rm);
+void bgt(int* pc, int rd, int rs, int rt, int rm);
+void ble(int* pc, int rd, int rs, int rt, int rm);
+void bge(int* pc, int rd, int rs, int rt, int rm);
+void jal(int* pc, int rd, int rs, int rt, int rm);
+void lw(int* pc, int rd, int rs, int rt, int rm);
+void sw(int* pc, int rd, int rs, int rt, int rm);
+void reti(IO_regs* io_regs, int* pc, int rd, int rs, int rt, int rm);
+void in(IO_regs* io_regs, int* pc, int rd, int rs, int rt, int rm, FILE* hwregtrace, FILE* leds, FILE* display7seg);
+void out(IO_regs* io_regs, int* pc, int rd, int rs, int rt, int rm, FILE* hwregtrace, FILE* leds, FILE* display7seg);
+void halt(int* pc, int rd, int rs, int rt, int rm);
+
+
+//Hardware IO functions:
+void clks_update(IO_regs* io_regs);
+void timer_update(IO_regs* io_regs);
+void disk_timer_update(IO_regs* io_regs);
+void io_reg_assignment(IO_regs* io_regs, int address, int rd, int rm, int in, FILE* leds, FILE* display7seg);
+
+//Upload files data:
+void save_imemin(FILE* imemin);
+void save_dmemin(FILE* dmemin);
+void save_diskin(FILE* diskin);
+void irq2in_list_update(FILE* imemin, FILE* dmemin, FILE* diskin, FILE* irq2in, FILE* dmemout, FILE* regout, FILE* trace,
+	FILE* hwregtrace, FILE* cycles, FILE* leds, FILE* display7seg, FILE* diskout, FILE* monitor, FILE* monitor_yuv);
+
+//Help functions:
+int sign_extension(int instr);
+void list_add_end(int content, FILE* imemin, FILE* dmemin, FILE* diskin, FILE* irq2in, FILE* dmemout, FILE* regout, FILE* trace,
+	FILE* hwregtrace, FILE* cycles, FILE* leds, FILE* display7seg, FILE* diskout, FILE* monitor, FILE* monitor_yuv);
+void check_irq2_in_cycle(IO_regs* io_regs);
+void open_files(char** argv, FILE** imemin, FILE** dmemin, FILE** diskin, FILE** irq2in, FILE** dmemout, FILE** regout, FILE** trace,
+	FILE** hwregtrace, FILE** cycles, FILE** leds, FILE** display7seg, FILE** diskout, FILE** monitor, FILE** monitor_yuv);
+
+//Printing functions:
+void print_trace(FILE* trace, int* pc, long long* instruction);
+void print_files(int clks, FILE* cycles, FILE* memout, FILE* regout, FILE* diskin, FILE* irq2in, FILE* hwregtrace,
+	FILE* leds, FILE* display7seg, FILE* diskout, FILE* monitor, FILE* monitor_yuv);
+
+//Free resources functions:
+void free_irq2_list();
+void close_files(FILE* imemin, FILE* dmemin, FILE* diskin, FILE* irq2in, FILE* dmemout, FILE* regout, FILE* trace,
+	FILE* hwregtrace, FILE* cycles, FILE* leds, FILE* display7seg, FILE* diskout, FILE* monitor, FILE* monitor_yuv);
+
+
+
+int main(int argc, char** argv)
+{
+	FILE* imemin = NULL, * dmemin = NULL, * diskin = NULL, * irq2in = NULL, * dmemout = NULL, * regout = NULL, * trace = NULL,
+		* hwregtrace = NULL, * cycles = NULL, * leds = NULL, * display7seg = NULL, * diskout = NULL, * monitor = NULL, * monitor_yuv = NULL;
+
+	open_files(argv, &imemin, &dmemin, &diskin, &irq2in, &dmemout, &regout, &trace, &hwregtrace, &cycles, &leds, &display7seg, &diskout, &monitor, &monitor_yuv);
+
+	//save information from the input files to an array
+	save_imemin(imemin);
+	save_dmemin(dmemin);
+	save_diskin(diskin);
+	irq2in_list_update(imemin, dmemin, diskin, irq2in, dmemout, regout, trace, hwregtrace, cycles, leds, display7seg, diskout, monitor, monitor_yuv);
+	IO_regs io_regs = { 0 };
+
+	simulator_run(&io_regs, dmemout, regout, trace, cycles, diskin, irq2in, hwregtrace, leds, display7seg, diskout, monitor, monitor_yuv);
+
+	//Free sources
+	close_files(imemin, dmemin, diskin, irq2in, dmemout, regout, trace, hwregtrace, cycles, leds, display7seg, diskout, monitor, monitor_yuv);
+	free_irq2_list();
+	return 0;
+}
+
+
+
+//the run of the simulator
+void simulator_run(IO_regs* io_regs, FILE* dmemout, FILE* regout, FILE* trace, FILE* cycles, FILE* diskin, FILE* irq2in,
+	FILE* hwregtrace, FILE* leds, FILE* display7seg, FILE* diskout, FILE* monitor, FILE* monitor_yuv)
+{
+
+	int opcode, rd, rs, rt, rm;
+	long long inst = 0;
+	int pc = 0, irq = 0, do_intterupt = 0;
+	while (!done)
+	{
+
+
+		irq = ((*io_regs).irq0enable & (*io_regs).irq0status) |
+			((*io_regs).irq1enable & (*io_regs).irq1status) |
+			((*io_regs).irq2enable & (*io_regs).irq2status);
+
+		do_intterupt = interrupt_update(io_regs, irq, &pc);
+		if (do_intterupt) {
+			io_regs->irqreturn = pc;
+			pc = io_regs->irqhandler;
+		}
+
+		//choose the insturction
+		inst = choose_instruction(io_regs, &pc, irq);
+		//saves data of $imm1 and $imm2
+		simp_regs[$imm2] = sign_extension(inst & 0xfff);
+		simp_regs[$imm1] = sign_extension((inst >> 12) & 0xfff);
+
+		print_trace(trace, &pc, &inst);
+
+		//decode
+		decode(inst, &opcode, &rd, &rs, &rt, &rm);
+
+		//advance PC
+		pc = pc + 1;
+
+		//execute
+		excecute(io_regs, &pc, opcode, rd, rs, rt, rm, hwregtrace, leds, display7seg);
+
+		//printf("%d\n", irq);
+		cycle++;
+
+		timer_update(io_regs);
+		clks_update(io_regs);
+		disk_timer_update(io_regs);
+	}
+
+
+	print_files(io_regs->clks, cycles, dmemout, regout, diskin, irq2in, hwregtrace,
+		leds, display7seg, diskout, monitor, monitor_yuv);
+
+}
+
+void open_files(char** argv, FILE** imemin, FILE** dmemin, FILE** diskin, FILE** irq2in, FILE** dmemout, FILE** regout, FILE** trace,
+	FILE** hwregtrace, FILE** cycles, FILE** leds, FILE** display7seg, FILE** diskout, FILE** monitor, FILE** monitor_yuv)
+{
+	*imemin = fopen(argv[1], "r");
+	if (*imemin == NULL)
+	{
+		printf("Error - can't open file %s", argv[1]);
+		goto Out;
+	}
+
+	*dmemin = fopen(argv[2], "r");
+	if (*dmemin == NULL) {
+		printf("Error - can't open file %s", argv[2]);
+		goto Out;
+	}
+	*diskin = fopen(argv[3], "r");
+	if (*diskin == NULL) {
+		printf("Error - can't open file %s", argv[3]);
+		goto Out;
+	}
+
+	*irq2in = fopen(argv[4], "r");
+	if (*irq2in == NULL) {
+		printf("Error - can't open file %s", argv[4]);
+		goto Out;
+	}
+
+	*dmemout = fopen(argv[5], "w");
+	if (*dmemout == NULL) {
+		printf("Error - can't create file %s", argv[5]);
+		goto Out;
+	}
+
+	*regout = fopen(argv[6], "w");
+	if (*regout == NULL) {
+		printf("Error - can't create file %s", argv[6]);
+		goto Out;
+	}
+
+	*trace = fopen(argv[7], "w");
+	if (*trace == NULL) {
+		printf("Error - can't create file %s", argv[7]);
+		goto Out;
+	}
+
+	*hwregtrace = fopen(argv[8], "w");
+	if (*hwregtrace == NULL) {
+		printf("Error - can't create file %s", argv[8]);
+		goto Out;
+	}
+
+	*cycles = fopen(argv[9], "w");
+	if (*cycles == NULL) {
+		printf("Error - can't create file %s", argv[9]);
+		goto Out;
+	}
+
+	*leds = fopen(argv[10], "w");
+	if (*leds == NULL) {
+		printf("Error - can't create file %s", argv[10]);
+		goto Out;
+	}
+
+	*display7seg = fopen(argv[11], "w");
+	if (*display7seg == NULL) {
+		printf("Error - can't create file %s", argv[11]);
+		goto Out;
+	}
+
+	*diskout = fopen(argv[12], "w");
+	if (*diskout == NULL) {
+		printf("Error - can't create file %s", argv[12]);
+		goto Out;
+	}
+
+	*monitor = fopen(argv[13], "w");
+	if (*monitor == NULL) {
+		printf("Error - can't create file %s", argv[13]);
+		goto Out;
+	}
+
+	*monitor_yuv = fopen(argv[14], "wb");
+	if (*monitor_yuv == NULL) {
+		printf("Error - can't create file %s", argv[14]);
+		goto Out;
+	}
+
+	return;
+Out:
+	close_files(*imemin, *dmemin, *diskin, *irq2in, *dmemout, *regout, *trace, *hwregtrace, *cycles, *leds, *display7seg, *diskout, *monitor, *monitor_yuv);
+	exit(1);
+}
+
+
+
+void close_files(FILE* imemin, FILE* dmemin, FILE* diskin, FILE* irq2in, FILE* dmemout, FILE* regout, FILE* trace,
+	FILE* hwregtrace, FILE* cycles, FILE* leds, FILE* display7seg, FILE* diskout, FILE* monitor, FILE* monitor_yuv)
+{
+	if (imemin != NULL) {
+		fclose(imemin);
+	}
+
+	if (dmemin != NULL) {
+		fclose(dmemin);
+	}
+
+	if (diskin != NULL) {
+		fclose(diskin);
+	}
+
+	if (irq2in != NULL) {
+		fclose(irq2in);
+	}
+
+	if (dmemout != NULL) {
+		fclose(dmemout);
+	}
+
+	if (regout != NULL) {
+		fclose(regout);
+	}
+
+	if (trace != NULL) {
+		fclose(trace);
+	}
+
+	if (hwregtrace != NULL) {
+		fclose(hwregtrace);
+	}
+
+	if (cycles != NULL) {
+		fclose(cycles);
+	}
+
+	if (leds != NULL) {
+		fclose(leds);
+	}
+
+	if (display7seg != NULL) {
+		fclose(display7seg);
+	}
+
+	if (diskout != NULL) {
+		fclose(diskout);
+	}
+
+	if (monitor != NULL) {
+		fclose(monitor);
+	}
+
+	if (monitor_yuv != NULL) {
+		fclose(monitor_yuv);
+	}
+}
+
+
+void free_irq2_list()
+{
+	if (irq2in_head == NULL) {
+		return;
+	}
+	if (irq2in_head->next == NULL)
+	{
+		free(irq2in_head);
+		return;
+	}
+	irq2in_list* temp = irq2in_head->next;
+	while (temp != NULL)
+	{
+		free(irq2in_head);
+		irq2in_head = temp;
+		temp = temp->next;
+	}
+	free(irq2in_head);
+}
+
+
+
+//adds a cell at the end of a list
+void list_add_end(int content, FILE* imemin, FILE* dmemin, FILE* diskin, FILE* irq2in, FILE* dmemout, FILE* regout, FILE* trace,
+	FILE* hwregtrace, FILE* cycles, FILE* leds, FILE* display7seg, FILE* diskout, FILE* monitor, FILE* monitor_yuv)
+{
+	irq2in_list* new_cell = (irq2in_list*)malloc(sizeof(irq2in_list));
+	if (new_cell == NULL)
+	{
+		free_irq2_list();
+		close_files(imemin, dmemin, diskin, irq2in, dmemout, regout, trace, hwregtrace, cycles, leds, display7seg, diskout, monitor, monitor_yuv);
+		exit(1);
+	}
+	new_cell->i_num = content;
+	new_cell->next = NULL;
+	if (irq2in_head == NULL)
+	{
+		irq2in_head = new_cell;
+		return;
+	}
+	if (irq2in_head->next == NULL)
+	{
+		irq2in_head->next = new_cell;
+		return;
+	}
+	irq2in_list* temp = irq2in_head;
+	while (temp->next != NULL)
+		temp = temp->next;
+	temp->next = new_cell;
+}
+
+
+
+void check_irq2_in_cycle(IO_regs* io_regs)
+{
+	irq2in_list* temp = irq2in_head;
+	while (temp != NULL)
+	{
+		if (temp->i_num == io_regs->clks)
+		{
+			io_regs->irq2status = 1;
+			return;
+		}
+		temp = temp->next;
+	}
+}
+
+
+
+//reads the memin file and bulids main array
+void save_imemin(FILE* imemin) {
+	int i = 0;
+	long long content = 0;
+	while (1 == fscanf(imemin, "%llx", &content)) {
+		ins_array[i] = content;							//!!this passing the first "zeros" in the instruction!!
+		i++;
+	}
+}
+
+
+
+
+
+void save_dmemin(FILE* dmemin) {
+	int i = 0;
+	int content = 0;
+	while (1 == fscanf(dmemin, "%x", &content)) {
+		Data_memory_array[i] = content;
+		i++;
+	}
+}
+
+//function to get all the interupts from irq2in once
+void irq2in_list_update(FILE* imemin, FILE* dmemin, FILE* diskin, FILE* irq2in, FILE* dmemout, FILE* regout, FILE* trace,
+	FILE* hwregtrace, FILE* cycles, FILE* leds, FILE* display7seg, FILE* diskout, FILE* monitor, FILE* monitor_yuv) {
+	int content = 0;
+	while (1 == fscanf(irq2in, "%d", &content))
+	{
+		list_add_end(content, imemin, dmemin, diskin, irq2in, dmemout, regout, trace, hwregtrace, cycles, leds, display7seg, diskout, monitor, monitor_yuv);
+	}
+}
+
+
+
+void save_diskin(FILE* diskin) {
+	int i = 0;
+	int content = 0;
+	while (1 == fscanf(diskin, "%x", &content)) {
+		disk_content[i] = content;
+		i++;
+	}
+}
+
+
+
+//extracted signed extend imm from a given instruction
+int sign_extension(int imm) {
+	int mask = 0x800;
+	//checks if the imm is negetive or positive. if negative, sign extend with 1's
+	// (imm is 12 bits long)
+	if (mask & imm) {
+		imm += 0xfffff000;
+	}
+	return imm;
+}
+
+
+
+// decoding current instruction
+void decode(long long  instruction, int* opcode, int* rd, int* rs, int* rt, int* rm) {
+	*opcode = (instruction >> 40) & 0xff;
+	*rd = (instruction >> 36) & 0xf;
+	*rs = (instruction >> 32) & 0xf;
+	*rt = (instruction >> 28) & 0xf;
+	*rm = (instruction >> 24) & 0xf;
+
+	//printf("opcode: %d, RD: %d, RS: %d, RT: %d, RM: %d\n", *opcode, *rd, *rs, *rt, *rm);
+}
+
+
+
+// executes instruction as function of opcode
+void excecute(IO_regs* io_regs, int* pc, int opcode, int rd, int rs, int rt, int rm, FILE* hwregtrace, FILE* leds, FILE* display7seg) {
+	switch (opcode) {
+	case 0:
+		if (rd != 0)
+			add(pc, rd, rs, rt, rm);
+		break;
+	case 1:
+		if (rd != 0)
+			sub(pc, rd, rs, rt, rm);
+		break;
+	case 2:
+		if (rd != 0)
+			mac(pc, rd, rs, rt, rm);
+		break;
+	case 3:
+		if (rd != 0)
+			and (pc, rd, rs, rt, rm);
+		break;
+	case 4:
+		if (rd != 0)
+			or (pc, rd, rs, rt, rm);
+		break;
+	case 5:
+		if (rd != 0)
+			xor (pc, rd, rs, rt, rm);
+		break;
+	case 6:
+		if (rd != 0)
+			sll(pc, rd, rs, rt, rm);
+		break;
+	case 7:
+		if (rd != 0)
+			sra(pc, rd, rs, rt, rm);
+		break;
+	case 8:
+		if (rd != 0)
+			srl(pc, rd, rs, rt, rm);
+		break;
+	case 9:
+		beq(pc, rd, rs, rt, rm);
+		break;
+	case 10:
+		bne(pc, rd, rs, rt, rm);
+		break;
+	case 11:
+		blt(pc, rd, rs, rt, rm);
+		break;
+	case 12:
+		bgt(pc, rd, rs, rt, rm);
+		break;
+	case 13:
+		ble(pc, rd, rs, rt, rm);
+		break;
+	case 14:
+		bge(pc, rd, rs, rt, rm);
+		break;
+	case 15:
+		jal(pc, rd, rs, rt, rm);
+		break;
+	case 16:
+		if (rd != 0)
+			lw(pc, rd, rs, rt, rm);
+		break;
+	case 17:
+		sw(pc, rd, rs, rt, rm);
+		break;
+	case 18:
+		reti(io_regs, pc, rd, rs, rt, rm);
+		break;
+	case 19:
+		if (rd != 0)
+			in(io_regs, pc, rd, rs, rt, rm, hwregtrace, leds, display7seg);
+		break;
+	case 20:
+		out(io_regs, pc, rd, rs, rt, rm, hwregtrace, leds, display7seg);
+
+		break;
+	case 21:
+		halt(pc, rd, rs, rt, rm);
+		break;
+
+	default:
+
+		break;
+	}
+	return;
+}
+
+
+
+
+//decides which instruction to decode
+long long choose_instruction(IO_regs* io_regs, int* pc, int irq)
+{
+	if ((irq == 1) && (interrupt == AVAILABLE)) {
+		io_regs->irqreturn = *pc;    // save address to return 
+		*pc = io_regs->irqhandler;
+	}
+	return ins_array[*pc];
+}
+
+
+
+
+
+// checks the timer and advanced it by need
+void timer_update(IO_regs* io_regs)
+{
+
+	if (io_regs->timerenable == 1)
+	{
+		//checks if the time reached to max - if so do the following instruction
+		if (io_regs->timercurrent == io_regs->timermax)
+		{
+			io_regs->irq0status = 1;
+			io_regs->timercurrent = 0;
+		}
+		else
+		{
+			io_regs->timercurrent += 1;
+		}
+	}
+}
+
+
+
+
+void disk_timer_update(IO_regs* io_regs) {
+	if (io_regs->diskstatus == 1)
+	{
+		disk_timer--;
+		if (disk_timer == 0)
+		{
+			io_regs->diskstatus = 0;
+			io_regs->diskcmd = 0;
+			io_regs->irq1status = 1;
+		}
+	}
+}
+
+
+
+
+void clks_update(IO_regs* io_regs)
+{
+	check_irq2_in_cycle(io_regs);
+	io_regs->clks++;
+}
+
+
+
+
+//finds who caused irq=1 between irq0, irq1 , irq2
+int interrupt_update(IO_regs* io_regs, int irq, int* pc)
+{
+	if ((irq == 1) && (interrupt == AVAILABLE))
+	{
+		if (io_regs->irq0enable && io_regs->irq0status)
+			interrupt = IRQ_0;
+		else if (io_regs->irq1enable && io_regs->irq1status)
+			interrupt = IRQ_1;
+		else if (io_regs->irq2enable && io_regs->irq2status)
+			interrupt = IRQ_2;
+		return 1;
+	}
+	return 0;
+}
+
+
+
+
+
+void print_trace(FILE* trace, int* pc, long long* instruction) {
+	fprintf(trace, "%03X %012llX", *pc, *instruction);
+	//prints regs
+	for (int i = 0; i < SIMP_REGS_SIZE; i++) {
+		fprintf(trace, " %08x", simp_regs[i]);
+	}
+	fprintf(trace, "\n");
+}
+
+
+
+
+
+//prints files after simulator ends its run
+void print_files(int clks, FILE* cycles, FILE* dmemout, FILE* regout, FILE* diskin, FILE* irq2in, FILE* hwregtrace,
+	FILE* leds, FILE* display7seg, FILE* diskout, FILE* monitor, FILE* monitor_yuv)
+{
+	int i = 0, last_non_zero = 0;
+
+	//dmemout file
+	for (i = MEMORY_SIZE - 1; i >= 0; i--)
+	{
+		if (Data_memory_array[i] != 0) {
+			last_non_zero = i;
+			break;
+		}
+	}
+	last_non_zero++;
+	for (i = 0; i < last_non_zero; i++) {
+		fprintf(dmemout, "%08X\n", Data_memory_array[i]);
+	}
+
+	//regout file
+	for (i = 3; i < SIMP_REGS_SIZE; i++) {
+		fprintf(regout, "%08X\n", simp_regs[i]);
+	}
+
+	//cycles file
+	fprintf(cycles, "%lld\n", cycle);
+
+
+	//monitor file
+	last_non_zero = 0;
+	for (i = MONITOR_SIZE - 1; i >= 0; i--)
+	{
+		if (monitor_buffer[i] != 0)
+		{
+			last_non_zero = i;
+			break;
+		}
+	}
+
+
+
+	for (i = 0; i <= last_non_zero; i++)
+	{
+		fprintf(monitor, "%02X\n", monitor_buffer[i]);
+	}
+
+	for (i = 0; i < 255 * 255; i++)
+	{
+		putc(monitor_buffer[i], monitor_yuv);
+	}
+
+	last_non_zero = 0;
+
+	//diskout file
+	for (i = DISK_SIZE - 1; i >= 0; i--)
+	{
+		if (disk_content[i] != 0) {
+			last_non_zero = i;
+			break;
+		}
+	}
+	last_non_zero++;
+	for (i = 0; i < last_non_zero; i++) {
+		fprintf(diskout, "%08X\n", disk_content[i]);
+	}
+}
+
+
+
+
+// implemention of all the opcodes
+
+// R[rd] = R[rs] + R[rt] + R[rm]
+void add(int* pc, int rd, int rs, int rt, int rm) {
+	simp_regs[rd] = simp_regs[rs] + simp_regs[rt] + simp_regs[rm];
+
+}
+
+// R[rd] = R[rs] - R[rt] - R[rm]
+void sub(int* pc, int rd, int rs, int rt, int rm) {
+	simp_regs[rd] = simp_regs[rs] - simp_regs[rt] - simp_regs[rm];
+}
+
+// R[rd] = R[rs] * R[rt] + R[rm]
+void mac(int* pc, int rd, int rs, int rt, int rm) {
+	simp_regs[rd] = simp_regs[rs] * simp_regs[rt] + simp_regs[rm];
+
+}
+
+// R[rd] = R[rs] & R[rt] & R[rm]
+void and (int* pc, int rd, int rs, int rt, int rm) {
+	simp_regs[rd] = simp_regs[rs] & simp_regs[rt] & simp_regs[rm];
+}
+
+// R[rd] = R[rs] | R[rt] | R[rm]
+void or (int* pc, int rd, int rs, int rt, int rm) {
+	simp_regs[rd] = simp_regs[rs] | simp_regs[rt] | simp_regs[rm];
+}
+
+// R[rd] = R[rs] ^ R[rt] ^ R[rm]
+void xor (int* pc, int rd, int rs, int rt, int rm) {
+	simp_regs[rd] = simp_regs[rs] ^ simp_regs[rt] ^ simp_regs[rm];
+}
+
+// R[rd] = R[rs] << R[rt]
+void sll(int* pc, int rd, int rs, int rt, int rm) {
+	simp_regs[rd] = simp_regs[rs] << simp_regs[rt];
+}
+
+
+
+//  R[rd] = R[rs] >> R[rt] (arithmetic shift)
+void sra(int* pc, int rd, int rs, int rt, int rm) {
+	if ((simp_regs[rs] < 0) && (simp_regs[rt] > 0)) {
+		simp_regs[rd] = simp_regs[rs] >> simp_regs[rt] | ~(~0U >> simp_regs[rt]);
+	}
+	else {
+		simp_regs[rd] = simp_regs[rs] >> simp_regs[rt];
+	}
+}
+
+
+
+// R[rd] = R[rs] >> R[rt] (logic shift)
+void srl(int* pc, int rd, int rs, int rt, int rm) {
+	simp_regs[rd] = simp_regs[rs] >> simp_regs[rt];
+}
+
+
+
+//  if (R[rs] == R[rt]) @ pc = R[rm][low bits 11:0]
+void beq(int* pc, int rd, int rs, int rt, int rm) {
+	*pc = (simp_regs[rs] == simp_regs[rt]) ? (simp_regs[rm] & 0xfffu) % MEMORY_SIZE : *pc;
+}
+
+
+
+// if (R[rs] != R[rt]) @ pc = R[rm][low bits 11:0]
+void bne(int* pc, int rd, int rs, int rt, int rm) {
+	*pc = (simp_regs[rs] != simp_regs[rt]) ? (simp_regs[rm] & 0xfffu) % MEMORY_SIZE : *pc;
+}
+
+
+
+// if (R[rs] < R[rt]) @ pc = R[rm] [low bits 11:0]
+void blt(int* pc, int rd, int rs, int rt, int rm) {
+	*pc = (simp_regs[rs] < simp_regs[rt]) ? (simp_regs[rm] & 0xfffu) % MEMORY_SIZE : *pc;
+}
+
+
+
+//if (R[rs] > R[rt]) @ pc = R[rm] [low bits 11:0]
+void bgt(int* pc, int rd, int rs, int rt, int rm) {
+	*pc = (simp_regs[rs] > simp_regs[rt]) ? (simp_regs[rm] & 0xfffu) % MEMORY_SIZE : *pc;
+
+}
+
+
+
+//  if (R[rs] <= R[rt]) @ pc = R[rm] [low bits 11:0]
+void ble(int* pc, int rd, int rs, int rt, int rm) {
+	*pc = (simp_regs[rs] <= simp_regs[rt]) ? (simp_regs[rm] & 0xfffu) % MEMORY_SIZE : *pc;
+
+}
+
+
+
+//if (R[rs] >= R[rt]) @ pc = R[rm] [low bits 11:0]
+void bge(int* pc, int rd, int rs, int rt, int rm) {
+	*pc = (simp_regs[rs] >= simp_regs[rt]) ? (simp_regs[rm] & 0xfffu) % MEMORY_SIZE : *pc;
+}
+
+
+
+// pc = R[rm][11:0]
+void jal(int* pc, int rd, int rs, int rt, int rm) {
+
+	simp_regs[rd] = *pc;
+	*pc = (simp_regs[rm] & 0xfffu) % MEMORY_SIZE;
+}
+
+
+
+// R[rd] = MEM[R[rs]+R[rt]] + R[rm]
+void lw(int* pc, int rd, int rs, int rt, int rm) {
+	if ((simp_regs[rs] + simp_regs[rt]) >= 0)
+		simp_regs[rd] = Data_memory_array[(simp_regs[rs] + simp_regs[rt]) % MEMORY_SIZE] + simp_regs[rm];
+
+}
+
+
+
+//  MEM[R[rs]+R[rt]] = R[rm] + R[rd]
+void sw(int* pc, int rd, int rs, int rt, int rm) {
+	if ((simp_regs[rs] + simp_regs[rt]) >= 0)
+		Data_memory_array[(simp_regs[rs] + simp_regs[rt]) % MEMORY_SIZE] = simp_regs[rm] + simp_regs[rd];
+
+}
+
+
+
+//  PC = IORegister[7]
+void reti(IO_regs* io_regs, int* pc, int rd, int rs, int rt, int rm) {
+	//allow interrupt again 
+
+	if (interrupt == IRQ_0)
+		io_regs->irq0status = 0;
+	if (interrupt == IRQ_1)
+		io_regs->irq1status = 0;
+	if (interrupt == IRQ_2)
+		io_regs->irq2status = 0;
+
+	interrupt = AVAILABLE;
+	*pc = io_regs->irqreturn;
+}
+
+
+
+
+// R[rd] = IORegister[R[rs] + R[rt]]
+void in(IO_regs* io_regs, int* pc, int rd, int rs, int rt, int rm, FILE* hwregtrace, FILE* leds, FILE* display7seg) {
+	char IO_reg_name[20];
+	int address = simp_regs[rs] + simp_regs[rt], data = 0;
+
+	if (address > 22)										//take care of the case that the address is smaller than zero
+		simp_regs[rd] = 0;
+	else
+		io_reg_assignment(io_regs, address, rd, rm, 1, leds, display7seg);
+
+	switch (address) {
+	case 0:
+		strcpy(IO_reg_name, "irq0enable");
+		break;
+	case 1:
+		strcpy(IO_reg_name, "irq1enable");
+		break;
+	case 2:
+		strcpy(IO_reg_name, "irq2enable");
+		break;
+	case 3:
+		strcpy(IO_reg_name, "irq0status");
+		break;
+	case 4:
+		strcpy(IO_reg_name, "irq1status");
+		break;
+	case 5:
+		strcpy(IO_reg_name, "irq2status");
+		break;
+	case 6:
+		strcpy(IO_reg_name, "irqhandler");
+		break;
+	case 7:
+		strcpy(IO_reg_name, "irqreturn");
+		break;
+	case 8:
+		strcpy(IO_reg_name, "clks");
+		break;
+	case 9:
+		strcpy(IO_reg_name, "leds");
+		break;
+	case 10:
+		strcpy(IO_reg_name, "display7seg");
+		break;
+	case 11:
+		strcpy(IO_reg_name, "timerenable");
+		break;
+	case 12:
+		strcpy(IO_reg_name, "timercurrent");
+		break;
+	case 13:
+		strcpy(IO_reg_name, "timermax");
+		break;
+	case 14:
+		strcpy(IO_reg_name, "diskcmd");
+		break;
+	case 15:
+		strcpy(IO_reg_name, "disksector");
+		break;
+	case 16:
+		strcpy(IO_reg_name, "diskbuffer");
+		break;
+	case 17:
+		strcpy(IO_reg_name, "diskstatus");
+		break;
+	case 18:
+		strcpy(IO_reg_name, "reserved");
+		break;
+	case 19:
+		strcpy(IO_reg_name, "reserved");
+		break;
+	case 20:
+		strcpy(IO_reg_name, "monitoraddr");
+		break;
+	case 21:
+		strcpy(IO_reg_name, "monitordata");
+		break;
+	case 22:
+		strcpy(IO_reg_name, "monitorcmd");
+		break;
+	default:
+		break;
+	}
+
+	fprintf(hwregtrace, "%lld READ %s %08x\n", cycle, IO_reg_name, simp_regs[rd]);
+
+}
+
+
+
+
+
+
+
+// IORegister[R[rs] + R[rt]] = R[rm]
+void out(IO_regs* io_regs, int* pc, int rd, int rs, int rt, int rm, FILE* hwregtrace, FILE* leds, FILE* display7seg) {
+	char IO_reg_name[20];
+	int address = simp_regs[rs] + simp_regs[rt];
+
+
+	if (address < 23)
+	{
+		io_reg_assignment(io_regs, address, rd, rm, 0, leds, display7seg);
+	}
+
+	switch (address) {
+	case 0:
+		strcpy(IO_reg_name, "irq0enable");
+		break;
+	case 1:
+		strcpy(IO_reg_name, "irq1enable");
+		break;
+	case 2:
+		strcpy(IO_reg_name, "irq2enable");
+		break;
+	case 3:
+		strcpy(IO_reg_name, "irq0status");
+		break;
+	case 4:
+		strcpy(IO_reg_name, "irq1status");
+		break;
+	case 5:
+		strcpy(IO_reg_name, "irq2status");
+		break;
+	case 6:
+		strcpy(IO_reg_name, "irqhandler");
+		break;
+	case 7:
+		strcpy(IO_reg_name, "irqreturn");
+		break;
+	case 8:
+		strcpy(IO_reg_name, "clks");
+		break;
+	case 9:
+		strcpy(IO_reg_name, "leds");
+		break;
+	case 10:
+		strcpy(IO_reg_name, "display7seg");
+		break;
+	case 11:
+		strcpy(IO_reg_name, "timerenable");
+		break;
+	case 12:
+		strcpy(IO_reg_name, "timercurrent");
+		break;
+	case 13:
+		strcpy(IO_reg_name, "timermax");
+		break;
+	case 14:
+		strcpy(IO_reg_name, "diskcmd");
+		break;
+	case 15:
+		strcpy(IO_reg_name, "disksector");
+		break;
+	case 16:
+		strcpy(IO_reg_name, "diskbuffer");
+		break;
+	case 17:
+		strcpy(IO_reg_name, "diskstatus");
+		break;
+	case 18:
+		strcpy(IO_reg_name, "reserved");
+		break;
+	case 19:
+		strcpy(IO_reg_name, "reserved");
+		break;
+	case 20:
+		strcpy(IO_reg_name, "monitoraddr");
+		break;
+	case 21:
+		strcpy(IO_reg_name, "monitordata");
+		break;
+	case 22:
+		strcpy(IO_reg_name, "monitorcmd");
+		break;
+	default:
+		break;
+	}
+
+
+
+	fprintf(hwregtrace, "%lld WRITE %s %08x\n", cycle, IO_reg_name, simp_regs[rm]);
+
+
+}
+
+
+
+
+
+
+// doing assignment or opposite assignment for in and out functions
+void io_reg_assignment(IO_regs* io_regs, int address, int rd, int rm, int in, FILE* leds, FILE* display7seg)
+{
+	switch (address)
+	{
+	case 0:
+		if (in) {
+			simp_regs[rd] = (*io_regs).irq0enable;
+		}
+		else {
+			(*io_regs).irq0enable = simp_regs[rm];
+		}
+		break;
+	case 1:
+		if (in) {
+			simp_regs[rd] = (*io_regs).irq1enable;
+		}
+		else {
+			(*io_regs).irq1enable = simp_regs[rm];
+		}
+		break;
+	case 2:
+		if (in) {
+			simp_regs[rd] = (*io_regs).irq2enable;
+		}
+		else {
+			(*io_regs).irq2enable = simp_regs[rm];
+		}
+		break;
+	case 3:
+		if (in) {
+			simp_regs[rd] = (*io_regs).irq0status;
+		}
+		else {
+			(*io_regs).irq0status = simp_regs[rm];
+		}
+		break;
+	case 4:
+		if (in) {
+			simp_regs[rd] = (*io_regs).irq1status;
+		}
+		else {
+			(*io_regs).irq1status = simp_regs[rm];
+		}
+		break;
+	case 5:
+		if (in) {
+			simp_regs[rd] = (*io_regs).irq2status;
+		}
+		else {
+			(*io_regs).irq2status = simp_regs[rm];
+		}
+		break;
+	case 6:
+		if (in) {
+			simp_regs[rd] = (*io_regs).irqhandler;
+		}
+		else {
+			(*io_regs).irqhandler = simp_regs[rm];
+		}
+		break;
+	case 7:
+		if (in) {
+			simp_regs[rd] = (*io_regs).irqreturn;
+		}
+		else {
+			(*io_regs).irqreturn = simp_regs[rm];
+		}
+		break;
+	case 8:
+		if (in) {
+			simp_regs[rd] = (*io_regs).clks;
+		}
+		else {
+			(*io_regs).clks = simp_regs[rm];
+		}
+		break;
+	case 9:
+		if (in) {
+			simp_regs[rd] = (*io_regs).leds;
+		}
+		else {
+			(*io_regs).leds = simp_regs[rm];
+			fprintf(leds, "%lld %08x\n", cycle, io_regs->leds);
+
+		}
+		break;
+	case 10:
+		if (in) {
+			simp_regs[rd] = (*io_regs).display7seg;
+		}
+		else {
+			(*io_regs).display7seg = simp_regs[rm];
+			fprintf(display7seg, "%lld %08x\n", cycle, io_regs->display7seg);
+
+		}
+		break;
+	case 11:
+		if (in) {
+			simp_regs[rd] = (*io_regs).timerenable;
+		}
+		else {
+			(*io_regs).timerenable = simp_regs[rm];
+		}
+		break;
+	case 12:
+		if (in) {
+			simp_regs[rd] = (*io_regs).timercurrent;
+		}
+		else {
+			(*io_regs).timercurrent = simp_regs[rm];
+		}
+		break;
+
+	case 13:
+		if (in) {
+			simp_regs[rd] = (*io_regs).timermax;
+		}
+		else {
+			(*io_regs).timermax = simp_regs[rm];
+		}
+		break;
+	case 14:
+		if (in) {
+			simp_regs[rd] = (*io_regs).diskcmd;
+		}
+		else {
+			if ((*io_regs).diskstatus == 0)
+			{
+				if (simp_regs[rm] == 1)
+				{
+					memcpy(&Data_memory_array[(*io_regs).diskbuffer], &disk_content[(*io_regs).disksector * 128], 128 * sizeof(int));
+					(*io_regs).diskstatus = 1;
+					disk_timer = 1024;
+				}
+				if (simp_regs[rm] == 2)
+				{
+					memcpy(&disk_content[(*io_regs).disksector * 128], &Data_memory_array[(*io_regs).diskbuffer], 128 * sizeof(int));
+					(*io_regs).diskstatus = 1;
+					disk_timer = 1024;
+				}
+			}
+			(*io_regs).diskcmd = simp_regs[rm];
+		}
+		break;
+	case 15:
+		if (in) {
+			simp_regs[rd] = (*io_regs).disksector;
+		}
+		else {
+			(*io_regs).disksector = simp_regs[rm];
+		}
+		break;
+	case 16:
+		if (in) {
+			simp_regs[rd] = (*io_regs).diskbuffer;
+		}
+		else {
+			(*io_regs).diskbuffer = simp_regs[rm];
+		}
+		break;
+	case 17:
+		if (in) {
+			simp_regs[rd] = (*io_regs).diskstatus;
+		}
+		else {
+			(*io_regs).diskstatus = simp_regs[rm];
+		}
+		break;
+	case 18:
+		if (in) {
+			simp_regs[rd] = (*io_regs).reserved;
+		}
+		else {
+			(*io_regs).reserved = simp_regs[rm];
+		}
+		break;
+	case 19:
+		if (in) {
+			simp_regs[rd] = (*io_regs).reserved;
+		}
+		else {
+			(*io_regs).reserved = simp_regs[rm];
+		}
+		break;
+	case 20:
+		if (in) {
+			simp_regs[rd] = (*io_regs).monitoraddr;
+		}
+		else {
+			(*io_regs).monitoraddr = simp_regs[rm];
+		}
+		break;
+	case 21:
+		if (in) {
+			simp_regs[rd] = (*io_regs).monitordata;
+		}
+		else {
+			(*io_regs).monitordata = simp_regs[rm];
+		}
+		break;
+	case 22:
+		if (in) {
+			simp_regs[rd] = 0;
+		}
+		else {
+			if (simp_regs[rm] == 1) {
+				monitor_buffer[io_regs->monitoraddr] = (*io_regs).monitordata;
+			}
+		}
+		break;
+
+	default:
+		break;
+	}
+}
+
+
+
+
+
+//end of assembly code
+void halt(int* pc, int rd, int rs, int rt, int rm)
+{
+	done = 1;
+}
