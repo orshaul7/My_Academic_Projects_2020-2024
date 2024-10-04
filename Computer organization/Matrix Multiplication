@@ -1,0 +1,73 @@
+
+
+.word 0x100 1   # Inserting values to the matrices
+.word 0x101 1
+.word 0x102 3
+.word 0x103 4
+.word 0x104 5
+.word 0x105 6
+.word 0x106 7
+.word 0x107 7
+.word 0x108 6
+.word 0x109 5
+.word 0x10A 4
+.word 0x10B 3
+.word 0x10C 2
+.word 0x10D 1
+.word 0x10E 1
+.word 0x10F 2
+
+.word 0x110 1
+.word 0x111 0
+.word 0x112 0
+.word 0x113 0
+.word 0x114 0
+.word 0x115 1
+.word 0x116 0
+.word 0x117 0
+.word 0x118 0
+.word 0x119 0
+.word 0x11A 1
+.word 0x11B 0
+.word 0x11C 0
+.word 0x11D 0
+.word 0x11E 0
+.word 0x11F 1
+	
+	
+add $s0, $imm1, $zero, $zero, 0x100, 0	   # Loading the address of where matrix 1 begins in $s0
+add $s1, $imm1, $zero, $zero, 0x110, 0	   # Loading the address of where matrix 2 begins in $s1
+add $s2, $imm1, $zero, $zero, 0x120, 0	   # Loading the address of where the result matrix begins in $s2
+
+add $t0, $zero, $zero, $zero, 0, 0         # Indexing the current row to multiply
+LOOP_ROWS:
+	add $t1, $zero, $zero, $zero, 0, 0         # Indexing the current column to multiply
+	LOOP_COLUMNS:
+		add $t2, $zero, $zero, $zero, 0, 0         # index in row and column
+		add $v0, $zero, $zero, $zero, 0, 0	# cumulative result of the scalar multiplication
+		LOOP_MUL:
+			mac $a0, $t0, $imm1, $t2, 4, 0 #index in matrix 1 - row*4 + index       
+			add $a0, $a0, $imm1, $s0, 0, 0 # get memory address of cell - $s0 + $a0 
+			lw $a0, $a0, $zero, $zero, 0, 0 #load value from matrix
+
+			mac $a1, $t2, $imm1, $t1, 4, 0 #index in matrix 2 - index*4 + column 
+			add $a1, $a1, $imm1, $s1, 0, 0 # get memory address of cell - $s1 + $a1 
+			lw $a1, $a1, $zero, $zero, 0, 0 #load value from matrix
+
+			mac $v0, $a0, $a1, $v0, 0, 0 # multiply and add to $v0
+			add $t2, $t2, $imm1, $zero, 1, 0
+			blt $zero, $t2, $imm1, $imm2, 4, LOOP_MUL
+
+		mac $a1, $t0, $imm1, $t1, 4, 0 #index in result - row*4 + column
+		add $a1, $a1, $imm1, $s2, 0, 0 # get memory address of cell - $s2 + $a1
+		sw $zero, $a1, $zero, $v0, 0, 0  # write value into result matrix
+
+
+		add $t1, $t1, $imm1, $zero, 1, 0
+		blt $zero, $t1, $imm1, $imm2, 4, LOOP_COLUMNS
+	
+	add $t0, $t0, $imm1, $zero, 1, 0
+	blt $zero, $t0, $imm1, $imm2, 4, LOOP_ROWS
+
+
+halt $zero, $zero, $zero, $zero, 0, 0	# Ending if we finished 
