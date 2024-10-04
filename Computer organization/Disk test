@@ -1,0 +1,26 @@
+add $t0, $imm1,$0, $0, 7, 0  # initializing $to to 7
+
+BUSYLOOP:     #main loop and first busy wait loop label
+
+     in $t2, $imm1, $0, $0, 17, 0  # read disk status
+     bne $0, $t2, $0, $imm1, BUSYLOOP, 0  # if disk status is not 0 we jump to the start of BUSY loop
+
+
+out $0, $imm1, $0, $t0, 15, 0         # write current disksector we want to read to disksector hw register
+out $0, $imm1, $0, $imm2, 16, 0x100   #write memory adress to read into to diskbuffer hw register
+out $0, $imm1, $0, $imm2, 14, 1       #write to diskcmd the "read" command (1)
+
+# busy wait again
+BUSYTWO:
+     in $t2, $imm1, $0, $0, 17, 0   # read disk status
+     bne $0, $t2, $0, $imm1, BUSYTWO, 0 # jump to BUSYTWO loop if disk is still busy
+
+add $t1, $t0, $imm1, $0, 1, 0 # get disk sector to write to (1 after the one we read)
+out $0, $imm1, $0, $t1, 15, 0 # write disk sector to the hw register
+out $0, $imm1, $0, $imm2, 16, 0x100 # write memory address to read from
+out $0, $imm1, $0, $imm2, 14, 2 # write the "write" command (2)
+
+sub $t0, $t0, $imm1, $0, 1, 0        # $t0=$t0-1
+bge $0, $t0, $0, $imm1, BUSYLOOP, 0  # if we didn't finish move all sectors yet jump to BUSYLOOP
+
+halt $0,$0,$0,$0,0,0  # Finish
