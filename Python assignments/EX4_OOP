@@ -1,0 +1,131 @@
+class Minibar:
+    def __init__(self, drinks, snacks):
+        self.drinks=drinks
+        self.snacks=snacks
+        self.bill=0.0
+
+    def __repr__(self):
+        to_return= 'The minibar contains the drinks: ' + str(list(self.drinks.keys())) +'\nAnd the snacks: ' +str(list(self.snacks.keys())) + '\nThe bill for the minibar is: ' +str(self.bill)
+        return to_return
+
+    def eat_a_snack(self, snack):
+        if(snack not in self.snacks.keys()):
+          raise ValueError('The snack is not in the minibar')
+        self.bill+=float(self.snacks[snack])
+        self.snacks.pop(snack)
+
+    def drink_a_drink(self, drink):
+        if(drink not in self.drinks.keys()):
+          raise ValueError('The drink is not in the minibar')
+        self.bill+=float(self.drinks[drink])
+        self.drinks.pop(drink)
+
+class RoomError(Exception):
+    # A subclass of Exception that defines a new error type
+    # DO NOT change this class
+    def __init__(self, message='This is a RoomError'):
+        self.message = message
+        super().__init__(self.message)
+
+
+class Room:
+    def __init__(self, minibar, floor, number, guests, clean_level, rank, satisfaction=1.0): #the function initiate a room
+        if (type(clean_level) is not int or type(rank) is not int or (
+                type(satisfaction) is not int and type(satisfaction) is not float)):
+            raise TypeError('There is a type error')
+        if (clean_level not in range(1, 11) or rank not in range(1, 4) or (satisfaction<1 or satisfaction>5)):
+            raise ValueError('There is a value error')
+        self.minibar = minibar
+        self.floor = floor
+        self.number = number
+        self.guests = guests
+        for i in range(len(self.guests)):
+            self.guests[i] = self.guests[i].lower()
+        self.clean_level = clean_level
+        self.rank = rank
+        self.satisfaction = satisfaction
+
+    def __repr__(self):
+        if len(self.guests)==0:
+          guests='empty'
+        else:
+          guests = ', '.join(self.guests)
+        return str(self.minibar) + '\nfloor: ' + str(self.floor) + '\nnumber: ' + str(self.number) + '\nguests: ' + str(
+            guests) + '\nclean_level: ' + str(self.clean_level) + '\nrank: ' + str(
+            self.rank) + '\nsatisfaction: ' + str(round(self.satisfaction,1))
+
+    def is_occupied(self):
+        return len(self.guests) > 0
+
+    def clean(self):
+        self.clean_level = min(10, self.clean_level + self.rank)
+
+    def better_than(self, other):
+        if (not isinstance(other, Room)):
+            raise TypeError('Other must be an instance of Room')
+        return (self.rank, self.floor, self.clean_level) > (other.rank, other.floor, other.clean_level)
+
+    def check_in(self, guests):
+        if (self.is_occupied()):
+            raise RoomError('Cannot check-in new guests to an occupied room')
+        self.guests = guests
+        for i in range(len(self.guests)):
+            self.guests[i] = self.guests[i].lower()
+        self.satisfaction=1.0
+
+    def check_out(self):
+        if (self.is_occupied()):
+            self.guests = []
+        else:
+            raise RoomError('Cannot check-out an empty room')
+
+    def move_to(self, other):
+        if (not self.is_occupied()):
+            raise RoomError('Cannot move guests from an empty room')
+        if (other.is_occupied()):
+            raise RoomError('Cannot move guests into an occupied room')
+        other.guests = self.guests
+        self.guests = []
+        if (other.better_than(self)):
+            other.satisfaction = min(5.0, self.satisfaction + 1.0)
+        else:
+            other.satisfaction = self.satisfaction
+class Hotel:
+    def __init__(self, name, rooms):
+        self.name=name
+        self.rooms=rooms
+    def __repr__(self):
+      num_of_rooms=len(self.rooms)
+      num_of_occupied=0
+      for room in self.rooms:
+        if(room.is_occupied()):
+          num_of_occupied+=1
+      return str(self.name) +' hotel has:\n' + str(num_of_rooms) +' rooms\n' +  str(num_of_occupied) + ' occupied rooms'
+
+    def check_in(self, guests, rank):
+        for room in self.rooms:
+          if(not room.is_occupied() and room.rank==rank):
+            room.check_in(guests)
+            return room
+        return None
+    def check_out(self, guest):
+        guest=guest.lower()
+        for room in self.rooms:
+          if(guest in room.guests):
+            room.check_out()
+            return room
+        return None
+    def check_if_guest_in_room(self,guest):
+      guest=guest.lower()
+      for room in self.rooms:
+        if(guest in room.guests):
+          return room
+      return None
+    def upgrade(self, guest):
+        guest_room=self.check_if_guest_in_room(guest)
+        if(guest_room!=None):
+          for room in self.rooms:
+            if(not room.is_occupied() and room.better_than(guest_room)):
+              guest_room.move_to(room)
+              return room
+        return None
