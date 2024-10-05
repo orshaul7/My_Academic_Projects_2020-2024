@@ -1,0 +1,92 @@
+R = 1;
+V = 1;
+d = 0.025;
+epsilon_0 = 8.85e-12;
+D = R/2;
+[Q_upper_board, Q_lower_board] = compute_q_for_cap(D, V/2, -V/2, d, R, epsilon_0);
+
+C = Q_upper_board/V;
+C_theoretical = epsilon_0 * pi * R^2/D;
+rel_error = abs(C-C_theoretical)/C_theoretical*100;
+fprintf('Q of upper disc for D=R/2 is %g[c] \n',Q_upper_board );
+fprintf('Q of lower disc for D=R/2 and potential 0 is %g[c] \n', Q_lower_board)
+fprintf('The relative error is %g percents \n', rel_error);
+
+
+D = R/5;
+[Q_upper_board, Q_lower_board] = compute_q_for_cap(D, V/2, -V/2, d, R, epsilon_0);
+C = Q_upper_board/V;
+C_theoretical = epsilon_0 * pi * R^2/D;
+rel_error = (C-C_theoretical)/C_theoretical*100;
+fprintf('Q of upper disc for D=R/5 is %g[c] \n', Q_upper_board);
+fprintf('The relative error is %g percents \n', rel_error);
+
+
+num_of_iterations = 2;
+m = 1;
+cap = zeros(num_of_iterations,1);
+for D = d/3:(1-d/3)/(num_of_iterations - 1):1
+    [Q_upper_board, Q_lower_board] = compute_q_for_cap(D, V/2, -V/2, d, R, epsilon_0);
+    cap(m) = Q_upper_board/V;
+    m = m + 1;
+end
+cap_theoretical  = epsilon_0 * pi * R^2./(d/3:(1-d/3)/(num_of_iterations - 1):1);
+plot (d/3:(1-d/3)/(num_of_iterations - 1):1, cap)
+hold on
+plot (d/3:(1-d/3)/(num_of_iterations - 1):1, cap_theoretical)
+xlabel('D'), ylabel('Q'), title('Q(D)')
+legend('Numerical solution', 'Analitic solution')
+[Q_upper_board, Q_lower_board] = compute_q_for_cap(D, V, 0, d, R, epsilon_0);
+
+
+D = R/2;
+[Q_upper_board, Q_lower_board] = compute_q_for_cap(D, V, 0, d, R, epsilon_0);
+C = Q_upper_board/V;
+C_theoretical = epsilon_0 * pi * R^2/D;
+rel_error = (C-C_theoretical)/C_theoretical*100;
+fprintf('Q of upper disc for D=R/2 and potential v is %g[c] \n', Q_upper_board);
+fprintf('Q of lower disc for D=R/2 and potential 0 is %g[c] \n', Q_lower_board)
+fprintf('The relative error is %g percents \n', rel_error);
+
+
+
+function[Q_upper_board, Q_lower_board] = compute_q_for_cap(D, V_upper_board, V_lower_board, d, R , epsilon_0)
+    temp = -(R):d:(R);
+    [X,Y] = meshgrid(temp);
+    indicator = zeros(length(temp));
+    indicator(X.^2 + Y.^2 < R^2) = 1;
+    num_of_elements = sum(sum(indicator));
+    set_of_dots = zeros(2,num_of_elements);
+    potential_vector = [V_upper_board * ones(num_of_elements,1) ; V_lower_board * ones(num_of_elements,1)];
+    k = 1;
+    for i = 1:length(temp)
+        for j = 1:length(temp)
+            if indicator(i,j) == 1
+                set_of_dots(1,k) = X(i,j);
+                set_of_dots(2,k) = Y(i,j);
+                k = k + 1;
+            end
+        end
+    end
+    LAA = zeros(num_of_elements);
+    for i = 1:num_of_elements
+        LAA(i,i) = 2/d*log((sqrt(2) + 1)/(sqrt(2) - 1));
+    end
+    for i = 1:num_of_elements
+        for j = 1:num_of_elements
+            if j ~= i
+                LAA(i,j) = 1/sqrt((set_of_dots(1,i)-set_of_dots(1,j))^2+(set_of_dots(2,i)-set_of_dots(2,j))^2);
+            end
+        end
+    end
+    LAB = zeros(num_of_elements);
+    for i = 1:num_of_elements
+        for j = 1:num_of_elements
+            LAB(i,j) = 1/sqrt((set_of_dots(1,i)-set_of_dots(1,j))^2+(set_of_dots(2,i)-set_of_dots(2,j))^2 + D^2);
+        end
+    end
+    L = [LAA, LAB; LAB, LAA];
+    X_vector = L\potential_vector;
+    Q_upper_board = sum(X_vector(1:length(X_vector)/2) * 4 * pi * epsilon_0);
+    Q_lower_board = sum(X_vector((length(X_vector)/2 + 1):length(X_vector)) * 4 * pi * epsilon_0);
+end
