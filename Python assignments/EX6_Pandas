@@ -1,0 +1,84 @@
+import numpy as np
+import pandas as pd
+import imageio
+import matplotlib.pyplot as plt
+
+
+#########################################
+# Question 1 helper functions - do not delete
+# this comment or change these functions
+#########################################
+
+#helper1----------------------------------------------------------------------
+def np_array_to_ascii(darr):
+    return ''.join([chr(item) for item in darr])
+
+
+#helper2----------------------------------------------------------------------
+def ascii_to_np_array(s):
+    return np.frombuffer(s.encode(), dtype=np.uint8)
+
+def arr_dist(a1, a2):
+    return np.absolute(a1-a2).sum()
+
+def find_best_place(im, np_msg):
+    im=np.asarray(im)
+    opt=(-1,-1)
+    min_distance=np.inf
+    for i in range(len(im)):
+      for j in range(len(im[i])-len(np_msg)+1):
+        cut_im=im[i,j:j+len(np_msg)].astype(np.int16)
+        curr_dist=arr_dist(np_msg,cut_im)
+        if curr_dist<min_distance:
+          min_distance=curr_dist
+          opt=(i,j)
+    return opt
+
+def create_image_with_msg(im, img_idx, np_msg):
+    copy_img=np.copy(im)
+    copy_img[0,0]=img_idx[0]
+    copy_img[0,1]=img_idx[1]
+    copy_img[0,2] = len(np_msg)
+    copy_img[img_idx[0],img_idx[1]:img_idx[1]+len(np_msg)]=np_msg
+    return copy_img
+
+def put_message(im, msg):
+    np_msg=ascii_to_np_array(msg)
+    best_place = find_best_place(im,np_msg)
+    return create_image_with_msg(im,best_place,np_msg)
+
+def get_message(im):
+    i=im[0,0]
+    j=im[0,1]
+    msg_size=im[0,2]
+    return np_array_to_ascii(im[i,j:j+msg_size])
+
+##############################################################################
+##############################################################################
+
+
+#########################################
+# Question 2 - do not delete this comment
+#########################################
+
+def read_missions_file(file_name):
+    try:
+      df=pd.read_csv(file_name,index_col='Kingdom')
+      return df
+    except IOError:
+      raise IOError('An IO error occurred')
+
+def add_daily_gain_col(bounties):
+  bounties['Daily gain']=bounties.apply(lambda x: (x['Bounty']-x['Expenses'])/x['Duration'],axis=1)
+
+def sum_rewards(bounties):
+    return bounties['Bounty'].sum() - bounties['Expenses'].sum()
+
+def find_best_kingdom(bounties):
+    add_daily_gain_col(bounties)
+    return bounties.index.to_list()[bounties['Daily gain'].argmax()]
+
+def find_best_duration(bounties):
+  add_daily_gain_col(bounties)
+  new_df=bounties.groupby(['Duration']).mean()
+  return new_df.index.to_list()[new_df['Daily gain'].argmax()]
