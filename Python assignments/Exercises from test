@@ -1,0 +1,47 @@
+import math
+def max_in_tree(lst):
+  if len(lst)==0:
+    return 0
+  curr_var=lst[0]
+  if type(curr_var)==int:
+    return max(lst[0],max_in_tree(lst[1:]))
+  else:
+    return max(max_in_tree(curr_var),max_in_tree(lst[1:]))
+
+import pandas as pd
+def load_and_clean(dataname):
+  df = pd.read_csv(dataname)
+  df = df.drop(columns=['serial_num'])
+  df = df.loc(2354:2364)
+  df['char'] = df['char'].apply(lambda x: x.strip())
+  return df
+
+df.loc(df['dialog']=="We've had one yes. What about second breakfast")['char'].unique()
+
+df_g=df.groupby(['char']).count()
+df_g['dialog']
+
+df['dialog_len']=df['dialog'].apply(lambda x:len(x))
+idx=df['dialog_len'].argmax()
+df.iloc(idx)['char']
+
+import numpy as np
+import imageio
+def flipcontrast(im):
+  im[im>255/2]=255
+  im[im<=255/2]=0
+  return im
+
+def Sobel(im):
+  for i in range(1,im.shape[0]-1):
+    for j in range(1, im.shape[1]-1):
+      slicing=im[i-1:i+2,j-1:j+2]
+      sx=slicing*gx
+      sy=slicing*gy
+      im[i,j]=(sx**2+sy**2)**0.5
+  return im
+
+def knapsack(n,p,w,possible_weight,current_p):
+  if(possible_weight<=0 or len(n)==0):
+    return current_p
+  return max(knapsack(n[1:],p[1:],w[1:],possible_weight-w[0],current_p+=p[0]),knapsack(n[1:],p[1:],w[1:],possible_weight,current_p))
