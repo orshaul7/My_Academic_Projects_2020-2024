@@ -1,0 +1,44 @@
+R = 1;
+V = 1;
+epsilon_0 = 8.85e-12;
+Q = zeros(length([0.25, 0.15,0.12,0.1,0.075,0.05,0.025,0.02]), 1);
+m = 1;
+for d = [0.25, 0.15,0.12,0.1,0.075,0.05,0.025,0.02]
+
+    temp = -(R):d:(R);
+    [X,Y] = meshgrid(temp);
+    indicator = zeros(length(temp));
+    indicator(X.^2 + Y.^2 < R^2) = 1;
+    num_of_elements = sum(sum(indicator));
+    set_of_dots = zeros(2,num_of_elements);
+    potential_vector = V * ones(num_of_elements,1);
+    k = 1;
+    for i = 1:length(temp)
+        for j = 1:length(temp)
+            if indicator(i,j) == 1
+                set_of_dots(1,k) = X(i,j);
+                set_of_dots(2,k) = Y(i,j);
+                k = k + 1;
+            end
+        end
+    end
+    L = zeros(num_of_elements);
+    for i = 1:num_of_elements
+        L(i,i) = 2/d*log((sqrt(2) + 1)/(sqrt(2) - 1));
+    end
+    for i = 1:num_of_elements
+        for j = 1:num_of_elements
+            if j ~= i
+                L(i,j) = 1/sqrt((set_of_dots(1,i)-set_of_dots(1,j))^2+(set_of_dots(2,i)-set_of_dots(2,j))^2);
+            end
+        end
+    end
+    X_vector = L\potential_vector;
+    Q(m) = sum(X_vector * 4 * pi * epsilon_0);
+    disp(Q(m))
+    m = m + 1;
+end
+plot([0.25, 0.15,0.12,0.1,0.075,0.05,0.025,0.02], Q), xlabel('d'), ylabel('Q _ total'), title('Q(d)')
+hold on
+plot([0.25, 0.15,0.12,0.1,0.075,0.05,0.025,0.02], 8*epsilon_0*V*R*ones(length([0.25, 0.15,0.12,0.1,0.075,0.05,0.025,0.02]),1))
+legend('Numerical solution', 'Analitic solution')
