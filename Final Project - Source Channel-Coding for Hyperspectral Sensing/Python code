@@ -1,0 +1,253 @@
+import numpy as np
+import warnings
+import spectral
+from collections import Counter
+import huffman
+import time
+import matplotlib.pyplot as plt
+from joblib import Parallel, delayed
+import random
+
+# Suppress warnings
+warnings.filterwarnings("ignore")
+
+# Define the G and H matrices for (7,4) Hamming code
+# G matrix for generating Hamming code (7,4)
+G = np.array([[1, 0, 0, 0, 1, 1, 0],
+              [0, 1, 0, 0, 1, 0, 1],
+              [0, 0, 1, 0, 1, 1, 1],
+              [0, 0, 0, 1, 0, 1, 1]])
+
+# H matrix for checking syndromes in Hamming (7,4) decoding
+H = np.array([[1, 1, 1, 0, 1, 0, 0],
+              [1, 0, 1, 1, 0, 1, 0],
+              [0, 1, 1, 1, 0, 0, 1]])
+
+# Function to decode Huffman encoded bit sequence
+def decode_huffman_bit(bit_seq):
+    current_code = ""  # Keeps track of the current code being built
+    decoded_list = []  # List to store decoded symbols
+    for bit in bit_seq:
+        current_code += str(bit)  # Append each bit to the current code
+        if current_code in inverse_huffman_tree:
+            decoded_list.append(inverse_huffman_tree[current_code])  # Decode symbol if found
+            current_code = ""  # Reset current code
+    return decoded_list
+
+# Function to perform Hamming (7,4) encoding on a bitstring
+def hamming_encode_vectorized(bitstring):
+    original_length = len(bitstring)  # Save original length before padding
+    # Pad the bitstring to make it a multiple of 4 bits
+    bitstring = np.pad(bitstring, (0, 4 - len(bitstring) % 4), 'constant')
+    # Reshape into 4-bit blocks
+    bitstring = np.reshape(bitstring, (-1, 4))
+    # Encode using the G matrix
+    encoded_bitstring = (np.dot(bitstring, G) % 2).reshape(-1)
+    return encoded_bitstring, original_length  # Return encoded bitstring and original length
+
+# Function to decode a 7-bit Hamming block
+def hamming_decode_7bit(received_block):
+    # Calculate the syndrome using H matrix
+    syndrome = np.dot(received_block, H.T) % 2
+    if np.any(syndrome):
+        # Find the position of the error and correct it
+        error_position = np.where((H.T == syndrome).all(axis=1))[0][0]
+        received_block[error_position] = 1 - received_block[error_position]  # Correct the error
+    return received_block[:4]  # Return the original 4-bit data
+
+# Function to introduce errors every 'error_rate' bits
+def introduce_errors(encoded_bitstring, error_rate=100):
+    received_bitstring = encoded_bitstring.copy()  # Copy the encoded bitstring for modification
+
+    # Keep track of the last error index
+    last_error_index = -float('inf')  # Start with a far index to ensure an error is inserted initially
+
+    for i in range(0, len(received_bitstring), error_rate):
+        # Set the current block range
+        block_start = i
+        block_end = min(i + error_rate, len(received_bitstring))  # Determine the end of the block
+
+        # Set the valid range for the new error, ensuring at least 4 bits after the last error
+        valid_start = max(block_start, last_error_index + 4)
+
+        # If the range is valid for error insertion
+        if valid_start < block_end:
+            while True:
+                # Choose a random position within the current block
+                error_index = random.randint(valid_start, block_end - 1)
+                
+                # Ensure the new error is not in the same block of 7 bits as the previous error
+                if error_index // 7 != last_error_index // 7:  # Ensure they are not in the same 7-bit block
+                    received_bitstring[error_index] = 1 - received_bitstring[error_index]  # Flip the selected bit
+                    last_error_index = error_index  # Update the last error index
+                    break  # Exit the loop after inserting the error
+
+    return received_bitstring  # Return the bitstring with introduced errors
+
+# Function to decode the entire bitstring encoded with Hamming code
+def hamming_decode_bitstring(received_bitstring, original_length):
+    decoded_bitstring = []  # List to store decoded bits
+    # Process each 7-bit block
+    for i in range(0, len(received_bitstring), 7):
+        received_block = received_bitstring[i:i+7]  # Extract the current 7-bit block
+        decoded_block = hamming_decode_7bit(received_block)  # Decode the block
+        decoded_bitstring.extend(decoded_block)  # Add the decoded bits to the list
+    # Remove any extra padded bits and return the original length bitstring
+    return np.array(decoded_bitstring[:original_length])
+
+# Function to calculate bit error rate (BER)
+def calculate_ber(original, received):
+    errors = np.sum(original != received)  # Count the number of differing bits
+    total_bits = len(original)  # Total number of bits
+    return errors / total_bits  # BER = errors / total bits
+
+# Function to calculate the predictor based on the neighboring pixels (vectorized)
+def calculate_predictor(image):
+    # Shift pixels along the x-axis and use that as the predictor
+    predictor = np.roll(image[:, :, :5], shift=-1, axis=1)  # Roll the image to get the predictor
+    # Handle the last column by copying the previous one
+    predictor[:, -1, :] = predictor[:, -2, :]  # Ensure the last column matches the previous one
+    return predictor  # Return the calculated predictor
+
+# Function to perform Huffman encoding on the flattened differences
+def huffman_encode_bitstring(flat_differences, huffman_tree):
+    encoded_bits = []  # List to store encoded bits
+    for symbol in flat_differences:
+        # Convert each symbol to its corresponding Huffman code and add to the bitstring
+        encoded_bits.extend(list(map(int, huffman_tree[symbol])))  # Append the bits to the list
+    return np.array(encoded_bits)  # Return the encoded bitstring as a numpy array
+
+# Load the image using the spectral library
+try:
+    image = spectral.open_image('92AV3C.lan').load()  # Open the hyperspectral image
+    spectral.view_cube(image, shape=[144, 144, 219])  # Display the image cube
+    # Displays the size of the pixel in bits
+    print(f"Data type: {image.dtype}")        
+    print(f"Size in bits per pixel: {image.dtype.itemsize * 8}")  # Print size in bits
+    # Print the dimensions of the image
+    print(f"Image dimensions: {image.shape}")
+    
+except Exception as e:
+    print(f"Error loading image: {e}")  # Print error message if image loading fails
+    exit(1)
+
+# Measure the start time for the pixel processing
+start_time = time.time()
+
+# Step 1: Calculate predictor using the vectorized method
+predictor = calculate_predictor(image)
+
+# Step 2: Compute the differences between the image and predictor
+differences = image[:, :, :5] - predictor  # Calculate differences for the first 5 bands
+# Convert the differences to integer type for encoding
+differences = differences.astype(np.int32)
+
+# Print the shape of differences
+print(f"Differences shape: {differences.shape}")
+
+# Flatten the differences for Huffman encoding
+flat_differences = differences.flatten()
+
+# Step 3: Perform Huffman encoding on the flattened differences
+frequency = Counter(flat_differences)  # Calculate frequency of each symbol
+huffman_tree = huffman.codebook(frequency.items())  # Generate Huffman tree
+encoded_data = huffman_encode_bitstring(flat_differences, huffman_tree)  # Encode differences
+
+# Step 4: Encode the Huffman encoded data using Hamming code
+encoded_bitstring, original_length = hamming_encode_vectorized(encoded_data)  # Encode with Hamming code
+
+# Measure the end time for the pixel processing
+process_time_neto = time.time() - start_time  # Calculate processing time
+
+# Step 5: Introduce errors into the encoded bitstream
+received_bitstring_with_errors = introduce_errors(encoded_bitstring, 100)  # Add errors to the bitstream
+
+# Calculate BER before correction
+ber_before_correction = calculate_ber(encoded_bitstring, received_bitstring_with_errors)  # Calculate BER
+
+# Step 6: Decode the bitstream using Hamming code and correct errors
+decoded_bitstring = hamming_decode_bitstring(received_bitstring_with_errors, original_length)  # Decode with correction
+
+# Extract the original data bits from the decoded bitstream
+decoded_bitstring_trimmed = decoded_bitstring[:len(encoded_data)]  # Trim to original length
+
+# Step 7: Calculate BER after correction
+ber_after_correction = calculate_ber(encoded_data, decoded_bitstring_trimmed)  # Calculate BER after correction
+
+# Step 8: Calculate the compression ratio
+# Determine the number of bits per value based on the data type
+bits_per_value = differences.dtype.itemsize * 8  # Each value in 'differences' is 32 bits
+original_size = len(flat_differences) * bits_per_value  # Calculate original image size
+compressed_size = len(encoded_data)  # Calculate compressed size (Huffman encoded)
+compression_ratio = original_size / compressed_size  # Calculate compression ratio
+
+# Print compression ratio
+print(f"Compression Ratio: 1:{compression_ratio:.2f}")
+
+# Print BER before/after correction
+print(f"BER before correction: {ber_before_correction:.10f}")
+print(f"BER after correction: {ber_after_correction:.10f}")
+
+# Check if BER is less than 10^-5 and print a message accordingly
+if ber_after_correction < 1e-5:
+    print("BER after < 10^-5")
+else:
+    print("BER after > 10^-5")
+
+# Check computational complexity
+time_per_pixel_ns = (process_time_neto / (image.shape[0] * image.shape[1] * image.shape[2])) * 1e9  # Calculate time per pixel
+print(f"Compression Time: {process_time_neto:.6f} seconds")
+print(f"Actual time per pixel: {time_per_pixel_ns:.2f} ns")
+
+# Check if the time per pixel meets the requirement
+if time_per_pixel_ns <= 216:
+    print("Meets computational complexity requirement: time per pixel < 216 ns")
+else:
+    print(f"Does not meet computational complexity requirement: time per pixel > 216 ns")
+
+# Create inverse Huffman tree for decoding
+inverse_huffman_tree = {v: k for k, v in huffman_tree.items()}  # Create inverse tree for decoding
+
+# Decode the Huffman encoded data back into differences
+decoded_differences_list = decode_huffman_bit(encoded_data)  # Decode the Huffman encoded data
+
+# Convert the decoded differences into the appropriate shape for the image
+decoded_differences = np.array(decoded_differences_list).astype(np.int32).reshape(differences.shape)  # Reshape to original
+
+# Step 9: Decompress the image using the predictor and decoded differences
+decompressed_image = predictor + decoded_differences  # Reconstruct the image
+
+# Verify if the decompressed image matches the original image (for the first 5 bands)
+original_5_bands = image[:, :, :5]  # Select the first 5 bands of the original image
+if np.array_equal(original_5_bands, decompressed_image):
+    print("Decompressed image matches the original image.")
+else:
+    print("Decompressed image does not match the original image.")
+    diff = np.abs(original_5_bands - decompressed_image)  # Calculate difference
+    print(f"Max difference: {np.max(diff)}, Mean difference: {np.mean(diff)}")  # Print max and mean difference
+
+# Display the original, compressed differences, and decompressed images for selected bands
+bands_to_show = [0, 1, 2, 3, 4]  # Select 5 bands to display
+plt.figure(figsize=(12, 8))  # Adjust figure size for display
+
+# Loop through each band and display the images
+for i, band in enumerate(bands_to_show):
+    # Original image
+    plt.subplot(3, 5, i + 1)
+    plt.imshow(image[:, :, band], cmap='gray')  # Show original image
+    plt.title(f'Original Image (Band {band})', fontsize=10)  # Title for original image
+
+    # Compressed differences
+    plt.subplot(3, 5, i + 6)
+    plt.imshow(differences[:, :, band], cmap='gray')  # Show compressed differences
+    plt.title(f'Compressed Differences (Band {band})', fontsize=10)  # Title for compressed differences
+
+    # Decompressed image
+    plt.subplot(3, 5, i + 11)
+    plt.imshow(decompressed_image[:, :, band], cmap='gray')  # Show decompressed image
+    plt.title(f'Decompressed Image (Band {band})', fontsize=10)  # Title for decompressed image
+
+# Use tight layout to avoid overlap of titles
+plt.tight_layout()
+plt.show()  # Display all the images
+
