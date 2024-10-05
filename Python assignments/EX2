@@ -1,0 +1,165 @@
+""" Exercise #2. Python for Engineers."""
+
+#########################################
+# Question 1 - do not delete this comment
+#########################################
+
+a = 3  # Replace the assignment with a positive integer to test your code.
+lst = [1, 2, 3, 4, 5]  # Replace the assignment with other lists to test your code.
+
+# Write the rest of the code for question 1 below here.
+
+len_lst=len(lst)
+
+for i in range(len_lst):
+    if lst[i]%a==0: 
+    
+      
+        print(i)
+        break
+   
+   
+else: print (-1) 
+
+# End of code for question 1
+
+#########################################
+# Question 2 - do not delete this comment
+#########################################
+lst2 = ['hello', 'world', 'course', 'python', 'day']
+# Replace the assignment with other lists of strings (str) to test your code.
+
+
+# Write the code for question 2 using a for loop below here.
+length=len(lst2)
+connected_lst2=''
+for i in range(length):
+    connected_lst2=connected_lst2+lst2[i]
+
+avg=len(connected_lst2)/length
+count=0
+
+for elem in lst2:
+    if len(elem)>avg: 
+        count+=1
+ 
+print('The number of strings longer than the average is:'+' '+str(count)) 
+
+# Write the code for question 2 using a while loop below here.
+
+lst2 = ['hello', 'world', 'course', 'python', 'day']
+len_lst2=len(lst2)
+i=0
+count=0
+new_2=''
+
+while i<=(len_lst2-1):
+    new_2=new_2+lst2[i]
+    i=i+1
+
+avg_2=len(new_2)/len_lst2 
+i=0
+while i<(len_lst2):
+    if len(lst2[i])>avg_2: 
+        count=count+1
+    i=i+1
+ 
+
+print('The number of strings longer than the average is:'+' '+str(count))
+
+# End of code for question 2
+
+#########################################
+# Question 3 - do not delete this comment
+#########################################
+
+lst3 = [0, 1, 2, 3, 4]  # Replace the assignment with other lists to test your code.
+
+
+# Write the rest of the code for question 3 below here.
+   
+i=0
+sum_lst=0
+lst_len=len(lst3)
+mysum=0
+
+if (lst_len!=(0 or 1)):
+    mysum=[lst3[i]*lst3[i+1] for i in range(lst_len-1)]
+    print(sum(mysum))
+
+elif lst_len==0:
+    print(0)
+ 
+
+else:
+    print(lst3[0])   
+
+# End of code for question 3
+
+
+#########################################
+# Question 4 - do not delete this comment
+#########################################
+
+lst4 = [1, 2, 4, 7]  # Replace the assignment with other lists to test your code.
+
+# Write the rest of the code for question 4 below here.
+
+i=1
+new_lst=[lst4[0], lst4[1]]
+sub=abs(lst4[0]-lst4[1])
+while (i!=(len(lst4)-1)):
+     
+    if abs(lst4[i+1]-lst4[i])> sub:
+        sub=abs(lst4[i+1]-lst4[i])
+        #x=max(lst4[i], lst4[i+1])
+        if lst4[i] in lst4:
+            new_lst.append(lst4[i+1])
+        else:
+            new_lst.append(lst4[i]) 
+    i=i+1
+     
+print(new_lst)
+
+
+# End of code for question 4
+
+#########################################
+# Question 5 - do not delete this comment
+#########################################
+
+my_string = 'abaadddefggg'  # Replace the assignment with other strings to test your code.
+k = 3  # Replace the assignment with a positive integer to test your code.
+
+# Write the rest of the code for question 5 below here.
+
+i=0
+count=1
+length=len(my_string)
+ezer=''
+
+while(count<=k-1 and i!=(length-1)):
+    
+    if my_string[i]==my_string[i+1]: 
+            
+    
+        ezer=my_string[i]
+        count=count+1        
+        i=i+1
+        
+    else:
+        ezer=''
+        i=i+1
+if ezer=='':
+    print('For length'+' '+str(k)+','+' '+'found the substring'+' '+str(my_string[0])+'!')   
+ 
+elif count<k:
+    print("Didn't find a substring of length"+str(k))   
+    
+
+else:
+    print('For length'+' '+str(k)+','+' '+'found the substring'+' '+str(ezer*k)+'!')
+    
+
+# End of code for question 5
+
