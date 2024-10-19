@@ -1,6 +1,6 @@
 ### Academic Projects (Oct 2020 - Oct 2024)
 **Associated with Tel Aviv University**
-- **Final Project** - Source/Channel Coding for Hyperspectral Sensing
+- **Final Project** - Source/Channel Coding for Hyperspectral Sensing (Implemented in Python)
 - Computer organization
 - VLSI
 - Advanced VLSI (Bitcoin Project)
