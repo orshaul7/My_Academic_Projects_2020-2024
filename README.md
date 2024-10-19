@@ -1,7 +1,6 @@
 Academic Projects
-Oct 2020 - Oct 2024Oct 2020 - Oct 2024
+Oct 2020 - Oct 2024
 
-Associated with Tel Aviv University
 Associated with Tel Aviv University
 • Final Project - Source/Channel Coding for Hyperspectral Sensing
 • Computer organization
