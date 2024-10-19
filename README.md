@@ -1,5 +1,4 @@
 Academic Projects
-Academic Projects
 Oct 2020 - Oct 2024Oct 2020 - Oct 2024
 
 Associated with Tel Aviv University
