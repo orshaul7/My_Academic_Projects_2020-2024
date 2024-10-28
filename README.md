@@ -39,5 +39,5 @@
 
 *Image sourced from:* [https://www.spectralpython.net/](https://www.spectralpython.net/) :92AV3C.lan
 
-**Skills:** Python, Hyperspectral Image Compression, Error Correcting Codes
+**Skills:** Python, Error Correcting Codes, DSP, Image Processing, and Satellite Communication.
 
