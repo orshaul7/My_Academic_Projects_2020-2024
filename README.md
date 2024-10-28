@@ -36,8 +36,8 @@
 - Developed Python code for hyperspectral image compression for a small satellite being developed by Tel Aviv University for climate and environmental research.
 - Wrote error correction code that reduces noise in the transmission channel from the satellite to the ground station.
 - The code has successfully passed tests using remote sensing satellite databases and is in advanced stages, with potential for future implementation on active satellites.
+- **Skills:** Python, Error Correcting Codes, DSP, Image Processing, and Satellite Communication.
 
 *Image sourced from:* [https://www.spectralpython.net/](https://www.spectralpython.net/) :92AV3C.lan
 
-**Skills:** Python, Error Correcting Codes, DSP, Image Processing, and Satellite Communication.
 
