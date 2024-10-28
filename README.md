@@ -35,10 +35,9 @@
 **Final Project: Combined Source/Channel Coding for Hyperspectral Sensing (Implemented in Python):**
 - Developed Python code for hyperspectral image compression for a small satellite being developed by Tel Aviv University for climate and environmental research.
 - Wrote error correction code that reduces noise in the transmission channel from the satellite to the ground station.
-- The code has successfully passed tests using remote sensing satellite databases and is in advanced stages, which may lead to future implementation on actual satellites.
-_Image sourced from:_ [Spectral Python](https://www.spectralpython.net/) :92AV3C.lan
+- The code has successfully passed tests using remote sensing satellite databases and is in advanced stages, with potential for future implementation on active satellites.
 
-## Skills
-- Python
-- Hyperspectral Image Compression
-- Error Correcting Codes
+*Image sourced from:* [https://www.spectralpython.net/](https://www.spectralpython.net/) :92AV3C.lan
+
+**Skills:** Python, Hyperspectral Image Compression, Error Correcting Codes
+
